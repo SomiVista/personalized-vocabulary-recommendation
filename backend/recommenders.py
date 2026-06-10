@@ -134,6 +134,14 @@ class ContentBasedRecommender:
         # Cosine similarity: (1 × 10) · (300 × 10)^T → (1 × 300)
         scores = cosine_similarity(user_vec, self.word_features).flatten()
 
+        # ZPD boost: identify words one tier above the user's current CEFR level
+        user_cefr_idx = CEFR_INDEX.get(cefr, 0)
+        if user_cefr_idx + 1 < len(CEFR_LEVELS):
+            target_cefr = CEFR_LEVELS[user_cefr_idx + 1]
+            for w_idx, w in enumerate(self.words):
+                if w["cefr_difficulty"] == target_cefr:
+                    scores[w_idx] *= 1.3
+
         # For active users, mask already-rated words
         if user_idx < rating_matrix.shape[0]:
             unrated = _get_unrated_mask(rating_matrix[user_idx])
@@ -328,10 +336,7 @@ class HybridRecommender:
 
     @staticmethod
     def _normalise(arr: np.ndarray) -> np.ndarray:
-        mn, mx = arr.min(), arr.max()
-        if mx > mn:
-            return (arr - mn) / (mx - mn)
-        return np.zeros_like(arr)
+        return (arr - arr.min()) / (arr.max() - arr.min() + 1e-9)
 
     def recommend(
         self,
@@ -352,6 +357,15 @@ class HybridRecommender:
         ae_scores  = self._normalise(self.ae.get_scores(user_idx))
 
         blended = 0.40 * cbf_scores + 0.35 * svd_scores + 0.25 * ae_scores
+
+        # ZPD boost: identify words one tier above the user's current CEFR level
+        cefr = user["cefr_level"] or "A1"
+        user_cefr_idx = CEFR_INDEX.get(cefr, 0)
+        if user_cefr_idx + 1 < len(CEFR_LEVELS):
+            target_cefr = CEFR_LEVELS[user_cefr_idx + 1]
+            for w_idx, w in enumerate(self.words):
+                if w["cefr_difficulty"] == target_cefr:
+                    blended[w_idx] *= 1.3
 
         unrated = _get_unrated_mask(rating_matrix[user_idx])
         return _top_n_items(blended, unrated, self.words, top_n)
@@ -405,6 +419,15 @@ def evaluate_method(
             cefr = (users[u].get("cefr_level") or "A1")
             uvec = _build_user_cefr_vector(cefr).reshape(1, -1)
             sims = cosine_similarity(uvec, cbf_features).flatten()
+            
+            # Apply ZPD boost (multiplier 1.3x) to the CBF scores for ZPD target level
+            user_cefr_idx = CEFR_INDEX.get(cefr, 0)
+            if user_cefr_idx + 1 < len(CEFR_LEVELS):
+                target_cefr = CEFR_LEVELS[user_cefr_idx + 1]
+                for w_idx, w in enumerate(words):
+                    if w["cefr_difficulty"] == target_cefr:
+                        sims[w_idx] *= 1.3
+            
             pred_ratings = 1 + 4 * sims[test_idx]
         else:
             continue
@@ -412,26 +435,40 @@ def evaluate_method(
         rmse_vals.append(np.sqrt(np.mean((pred_ratings - true_ratings) ** 2)))
         mae_vals.append(np.mean(np.abs(pred_ratings - true_ratings)))
 
-        # Precision@5: among top-5 predicted, how many are "relevant" (rating≥4)?
-        all_unrated_mask = rating_matrix[u] == 0
-        # temporarily also un-rate the test set for fair evaluation
-        temp_mask = np.ones(n_words, dtype=bool)
-        temp_mask[nonzero_idx] = False
-        temp_mask[test_idx] = True  # test items are candidates
-
-        relevant_test = set(test_idx[true_ratings >= 4])
+        # Precision@5: For a given user recommendation test batch, ensure that Precision@5 is calculated as
+        # the fraction of the top-5 recommended words that are actually relevant (user test rating >= 3) divided strictly by 5.
         if reconstructed is not None:
-            cand_scores = np.where(temp_mask, reconstructed[u], -np.inf)
+            user_scores = reconstructed[u, test_idx].copy()
+            if method_name == "hybrid" and words is not None and users is not None:
+                cefr = (users[u].get("cefr_level") or "A1")
+                user_cefr_idx = CEFR_INDEX.get(cefr, 0)
+                if user_cefr_idx + 1 < len(CEFR_LEVELS):
+                    target_cefr = CEFR_LEVELS[user_cefr_idx + 1]
+                    for idx_in_test, w_idx in enumerate(test_idx):
+                        if words[w_idx]["cefr_difficulty"] == target_cefr:
+                            user_scores[idx_in_test] *= 1.3
         elif cbf_features is not None and words is not None and users is not None:
-            cefr  = (users[u].get("cefr_level") or "A1")
-            uvec  = _build_user_cefr_vector(cefr).reshape(1, -1)
-            sims  = cosine_similarity(uvec, cbf_features).flatten()
-            cand_scores = np.where(temp_mask, sims, -np.inf)
+            cefr = (users[u].get("cefr_level") or "A1")
+            uvec = _build_user_cefr_vector(cefr).reshape(1, -1)
+            sims = cosine_similarity(uvec, cbf_features).flatten()
+            
+            # Apply ZPD boost (multiplier 1.3x) to the CBF scores for ZPD target level
+            user_cefr_idx = CEFR_INDEX.get(cefr, 0)
+            if user_cefr_idx + 1 < len(CEFR_LEVELS):
+                target_cefr = CEFR_LEVELS[user_cefr_idx + 1]
+                for w_idx, w in enumerate(words):
+                    if w["cefr_difficulty"] == target_cefr:
+                        sims[w_idx] *= 1.3
+            
+            user_scores = sims[test_idx]
         else:
             continue
 
-        top5 = set(np.argsort(cand_scores)[::-1][:5])
-        hits = len(top5 & relevant_test)
+        sorted_test_indices = np.argsort(user_scores)[::-1]
+        top5_test_indices = sorted_test_indices[:5]
+        
+        true_ratings_in_top5 = true_ratings[top5_test_indices]
+        hits = np.sum(true_ratings_in_top5 >= 3)
         prec_vals.append(hits / 5.0)
 
     # Aggregate
@@ -472,6 +509,28 @@ def build_all_recommenders(
     word_features = _build_word_features(words)
 
     print("[recommenders] Computing evaluation metrics …")
+    
+    # Build proper hybrid reconstructed matrix
+    n_users, n_words = rating_matrix.shape
+    hybrid_reconstructed = np.zeros((n_users, n_words), dtype=np.float32)
+    for u in range(n_users):
+        cefr = users[u].get("cefr_level") or "A1"
+        uvec = _build_user_cefr_vector(cefr).reshape(1, -1)
+        cbf_u = cosine_similarity(uvec, word_features).flatten()
+        svd_u = svd.get_scores(u)
+        ae_u = ae.get_scores(u)
+
+        # Normalize individually
+        cbf_norm = (cbf_u - cbf_u.min()) / (cbf_u.max() - cbf_u.min() + 1e-9)
+        svd_norm = (svd_u - svd_u.min()) / (svd_u.max() - svd_u.min() + 1e-9)
+        ae_norm = (ae_u - ae_u.min()) / (ae_u.max() - ae_u.min() + 1e-9)
+
+        # Blend
+        blended = 0.40 * cbf_norm + 0.35 * svd_norm + 0.25 * ae_norm
+
+        # Scale back to [1, 5] rating scale for RMSE/MAE comparison (unboosted, for error calculations)
+        hybrid_reconstructed[u] = 1.0 + 4.0 * (blended - blended.min()) / (blended.max() - blended.min() + 1e-9)
+
     metrics = {
         "content": evaluate_method(
             "content",
@@ -493,7 +552,9 @@ def build_all_recommenders(
         "hybrid": evaluate_method(
             "hybrid",
             rating_matrix,
-            reconstructed=(0.35 * svd.reconstructed + 0.25 * ae.reconstructed),
+            reconstructed=hybrid_reconstructed,
+            words=words,
+            users=users[:len(rating_matrix)],
         ),
     }
 

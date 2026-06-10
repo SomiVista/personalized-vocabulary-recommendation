@@ -109,6 +109,7 @@
           v-if="selectedUser"
           :all-metrics="allMetrics"
           :recommendations="recommendations"
+          :user="selectedUser"
         />
 
         <!-- Interaction log -->

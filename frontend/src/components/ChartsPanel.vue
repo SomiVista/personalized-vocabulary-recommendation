@@ -178,11 +178,11 @@
           <div class="arch-node arch-node--output">
             <div class="arch-node-icon">🎓</div>
             <div class="arch-node-label">Top-5 Vocabulary</div>
-            <div class="arch-node-sub">ZPD-aligned words</div>
+            <div class="arch-node-sub">ZPD Target: {{ zpdTargetLevel }}</div>
             <div class="arch-output-pills">
-              <span class="out-pill out-pill--b1">B1</span>
-              <span class="out-pill out-pill--b2">B2</span>
-              <span class="out-pill out-pill--c1">C1</span>
+              <span :class="['out-pill', `out-pill--${zpdTargetLevel.toLowerCase()}`]">
+                {{ zpdTargetLevel }}
+              </span>
             </div>
           </div>
         </div>
@@ -217,6 +217,7 @@ Chart.register(
 const props = defineProps({
   allMetrics:      { type: Object, default: () => ({}) },
   recommendations: { type: Array,  default: () => [] },
+  user:            { type: Object, default: () => ({}) },
 })
 
 // ── Chart refs ────────────────────────────────────────────────
@@ -306,6 +307,15 @@ const CEFR_COLORS = {
   B2: '#f97316', C1: '#f87171', C2: '#ef4444',
 }
 const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
+const userLevel = computed(() => props.user?.cefr_level || 'A1')
+const zpdTargetLevel = computed(() => {
+  const idx = CEFR_ORDER.indexOf(userLevel.value)
+  if (idx !== -1 && idx + 1 < CEFR_ORDER.length) {
+    return CEFR_ORDER[idx + 1]
+  }
+  return 'C2'
+})
 
 const cefrCounts = computed(() => {
   const counts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0 }
@@ -664,9 +674,12 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   text-transform: uppercase;
 }
+.out-pill--a1 { background: rgba(34,197,94,0.15); color: var(--cefr-a1); }
+.out-pill--a2 { background: rgba(134,239,172,0.15); color: var(--cefr-a2); }
 .out-pill--b1 { background: rgba(250,204,21,0.15); color: var(--cefr-b1); }
 .out-pill--b2 { background: rgba(249,115,22,0.15); color: var(--cefr-b2); }
 .out-pill--c1 { background: rgba(248,113,113,0.15); color: var(--cefr-c1); }
+.out-pill--c2 { background: rgba(239,68,68,0.15); color: var(--cefr-c2); }
 
 /* Responsive */
 @media (max-width: 900px) {
