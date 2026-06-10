@@ -39,6 +39,7 @@
       <Transition name="dropdown">
         <div
           v-if="isOpen && filteredUsers.length"
+          ref="dropdownRef"
           class="dropdown-teleported"
           role="listbox"
           :style="dropdownStyle"
@@ -114,6 +115,7 @@ const isOpen      = ref(false)
 const highlighted = ref(0)
 const inputRef    = ref(null)
 const wrapperRef  = ref(null)
+const dropdownRef = ref(null)
 let justFocused   = false
 
 // ── Fixed-position style for the teleported dropdown ────────
@@ -156,20 +158,26 @@ const coldStartVisible = computed(() =>
 )
 
 // ── Open / close ─────────────────────────────────────────────
+function onScrollClose(e) {
+  // Ignore scrolls that happen inside the dropdown list itself
+  if (dropdownRef.value && dropdownRef.value.contains(e.target)) return
+  closeDropdown()
+}
+
 function openDropdown() {
   updateDropdownPosition()
   isOpen.value = true
   justFocused = true
   setTimeout(() => { justFocused = false }, 200)
-  // Keep position correct if page is scrolled while dropdown is open
-  window.addEventListener('scroll', updateDropdownPosition, true)
-  window.addEventListener('resize', updateDropdownPosition)
+  // Close dropdown on external scroll (prevents misaligned fixed position)
+  window.addEventListener('scroll', onScrollClose, true)
+  window.addEventListener('resize', closeDropdown)
 }
 
 function closeDropdown() {
   isOpen.value = false
-  window.removeEventListener('scroll', updateDropdownPosition, true)
-  window.removeEventListener('resize', updateDropdownPosition)
+  window.removeEventListener('scroll', onScrollClose, true)
+  window.removeEventListener('resize', closeDropdown)
 }
 
 function selectUser(user) {
@@ -195,8 +203,8 @@ function selectHighlighted() {
 }
 
 onUnmounted(() => {
-  window.removeEventListener('scroll', updateDropdownPosition, true)
-  window.removeEventListener('resize', updateDropdownPosition)
+  window.removeEventListener('scroll', onScrollClose, true)
+  window.removeEventListener('resize', closeDropdown)
 })
 </script>
 
