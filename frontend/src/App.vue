@@ -105,25 +105,42 @@
         />
 
         <!-- Interaction log -->
-        <div v-if="interactionLog.length" class="log-panel glass fade-slide">
+        <div v-if="selectedUser" class="log-panel glass fade-slide">
           <div class="log-header">
             <span>📝</span> Interaction Log
-            <button class="log-clear mono" @click="interactionLog = []">clear</button>
+            <button
+              v-if="interactionLog.length"
+              class="log-clear mono"
+              @click="interactionLog = []"
+            >
+              clear
+            </button>
           </div>
-          <div class="log-scroll">
+          
+          <div v-if="interactionLog.length" class="log-scroll">
             <div
               v-for="(entry, i) in [...interactionLog].reverse()"
               :key="i"
               class="log-entry"
             >
               <span class="log-icon">{{ entry.rating === 5 ? '✓' : '📖' }}</span>
-              <span class="log-word">{{ entry.word.word }}</span>
-              <span class="log-cefr cefr-badge" :class="`cefr--${entry.word.cefr_difficulty.toLowerCase()}`">
+              <span class="log-word">{{ entry.word?.word || 'Unknown' }}</span>
+              <span
+                v-if="entry.word"
+                class="log-cefr cefr-badge"
+                :class="`cefr--${(entry.word.cefr_difficulty || 'a1').toLowerCase()}`"
+              >
                 {{ entry.word.cefr_difficulty }}
               </span>
               <span class="log-rating mono">rating={{ entry.rating }}</span>
               <span class="log-time mono">{{ entry.time }}</span>
             </div>
+          </div>
+
+          <div v-else class="log-empty-state">
+            <div class="log-empty-icon">📝</div>
+            <div class="log-empty-text">No interactions recorded yet.</div>
+            <div class="log-empty-hint">Mark recommended words above as "Mastered" or "Study" to populate the log.</div>
           </div>
         </div>
 
@@ -417,6 +434,8 @@ async function fetchRecommendations() {
       console.error('[recommend] Error:', err)
       showError(`Failed to fetch recommendations: ${err.message}`)
       recommendations.value = []
+      interactionLog.value  = []
+      currentMetrics.value  = null
     }
   } finally {
     if (selectedUser.value?.user_id === currentUserId) {
@@ -744,6 +763,30 @@ function showError(msg) {
 .cefr--b2 { background: rgba(249,115,22,0.12);  color: var(--cefr-b2); }
 .cefr--c1 { background: rgba(248,113,113,0.12); color: var(--cefr-c1); }
 .cefr--c2 { background: rgba(239,68,68,0.12);   color: var(--cefr-c2); }
+
+/* ── Interaction log empty state ── */
+.log-empty-state {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  padding:        30px 20px;
+  gap:            6px;
+  text-align:     center;
+}
+.log-empty-icon {
+  font-size: 24px;
+  opacity: 0.3;
+}
+.log-empty-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--clr-text-muted);
+}
+.log-empty-hint {
+  font-size: 11px;
+  color: var(--clr-text-faint);
+}
 
 /* ── Error toast ── */
 .error-toast {
