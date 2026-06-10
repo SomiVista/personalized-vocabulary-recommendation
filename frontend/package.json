@@ -1,0 +1,19 @@
+{
+  "name": "vocab-recommender-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MRW2 – Personalized Vocabulary Recommender Dashboard",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.2.0"
+  }
+}
