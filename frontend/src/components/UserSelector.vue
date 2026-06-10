@@ -16,6 +16,7 @@
         placeholder="Search users…"
         autocomplete="off"
         @focus="openDropdown"
+        @click="onClick"
         @blur="onBlur"
         @keydown.escape="closeDropdown"
         @keydown.arrow-down.prevent="moveHighlight(1)"
@@ -113,6 +114,7 @@ const isOpen      = ref(false)
 const highlighted = ref(0)
 const inputRef    = ref(null)
 const wrapperRef  = ref(null)
+let justFocused   = false
 
 // ── Fixed-position style for the teleported dropdown ────────
 const dropdownStyle = ref({})
@@ -126,6 +128,15 @@ function updateDropdownPosition() {
     left:     `${rect.left}px`,
     width:    `${rect.width}px`,
     zIndex:   9999,
+  }
+}
+
+function onClick() {
+  if (justFocused) return
+  if (isOpen.value) {
+    closeDropdown()
+  } else {
+    openDropdown()
   }
 }
 
@@ -148,6 +159,8 @@ const coldStartVisible = computed(() =>
 function openDropdown() {
   updateDropdownPosition()
   isOpen.value = true
+  justFocused = true
+  setTimeout(() => { justFocused = false }, 200)
   // Keep position correct if page is scrolled while dropdown is open
   window.addEventListener('scroll', updateDropdownPosition, true)
   window.addEventListener('resize', updateDropdownPosition)

@@ -72,6 +72,27 @@ async def _startup() -> None:
     _state["word_index"]    = {w["word_id"]: i for i, w in enumerate(words)}
     _state["user_index"]    = {u["user_id"]: i for i, u in enumerate(users)}
 
+    # Pre-populate custom interactions from the rating matrix for active users
+    custom_interactions = {}
+    for u in users:
+        u_id = u["user_id"]
+        custom_interactions[u_id] = []
+        u_idx = _state["user_index"].get(u_id)
+        if not u["is_cold_start"] and u_idx < rating_matrix.shape[0]:
+            rated_indices = np.where(rating_matrix[u_idx] > 0)[0]
+            for w_idx in rated_indices:
+                custom_interactions[u_id].append({
+                    "word": {
+                        "word_id": words[w_idx]["word_id"],
+                        "word": words[w_idx]["word"],
+                        "cefr_difficulty": words[w_idx]["cefr_difficulty"],
+                        "part_of_speech": words[w_idx]["part_of_speech"]
+                    },
+                    "rating": int(rating_matrix[u_idx, w_idx]),
+                    "time": "Prior Session"
+                })
+    _state["custom_interactions"] = custom_interactions
+
     print(f"[startup] Ready – {len(users)} users, {len(words)} words")
 
 
@@ -152,11 +173,9 @@ async def get_recommendations(
 
     metrics = _state["metrics"].get(method, {})
 
-    # Attach the number of words the user has already rated (for UI context)
-    if user_idx < matrix.shape[0]:
-        rated_count = int((matrix[user_idx] > 0).sum())
-    else:
-        rated_count = 0
+    # Build user interaction log history
+    interaction_log = _state["custom_interactions"].get(user_id, [])
+    rated_count = len(interaction_log)
 
     return {
         "user_id":     user_id,
@@ -165,6 +184,7 @@ async def get_recommendations(
         "rated_words": rated_count,
         "metrics":     metrics,
         "recommendations": recs,
+        "interaction_log": interaction_log,
     }
 
 
@@ -186,29 +206,54 @@ async def post_interact(body: InteractRequest):
         raise HTTPException(status_code=404, detail=f"Word {body.word_id} not found.")
 
     user = _state["users"][user_idx]
+    word = _state["words"][word_idx]
+
+    from datetime import datetime
+    time_str = datetime.now().strftime("%I:%M:%S %p")
+
+    # Update or append in custom_interactions
+    user_id = body.user_id
+    if user_id not in _state["custom_interactions"]:
+        _state["custom_interactions"][user_id] = []
+
+    existing_interaction = None
+    for interaction in _state["custom_interactions"][user_id]:
+        if interaction["word"]["word_id"] == body.word_id:
+            existing_interaction = interaction
+            break
+
+    if existing_interaction:
+        existing_interaction["rating"] = int(body.rating)
+        existing_interaction["time"] = time_str
+    else:
+        _state["custom_interactions"][user_id].append({
+            "word": {
+                "word_id": word["word_id"],
+                "word": word["word"],
+                "cefr_difficulty": word["cefr_difficulty"],
+                "part_of_speech": word["part_of_speech"]
+            },
+            "rating": int(body.rating),
+            "time": time_str
+        })
 
     # Cold-start users don't have a row in the rating matrix.
     # On first interaction, they get activated as an active user by
     # assigning a default CEFR level inferred from the rated word.
     if user["is_cold_start"]:
         # Infer a starting CEFR from the word being rated
-        word = _state["words"][word_idx]
         word_cefr = word["cefr_difficulty"]
         cefr_idx  = CEFR_INDEX[word_cefr]
         # Set user CEFR to the word's level (or lower if just rating=1)
         inferred_cefr = ["A1", "A1", "A2", "B1", "B2", "C1"][min(5, max(0, cefr_idx - 1 if body.rating <= 2 else cefr_idx))]
         _state["users"][user_idx]["cefr_level"] = inferred_cefr
-        # Note: cold-start users still won't have a rating matrix row
-        # (the matrix only covers users 1-100). We log the interaction
-        # but cannot update the matrix for now — this is a known
-        # prototype limitation. In a full system, the matrix would be
-        # dynamically extended.
         return {
             "status":   "interaction recorded (cold-start user – profile inferred)",
             "user_id":  body.user_id,
             "word_id":  body.word_id,
             "rating":   body.rating,
             "inferred_cefr": inferred_cefr,
+            "rated_words": len(_state["custom_interactions"][user_id]),
         }
 
     # Active user – update matrix directly
@@ -219,5 +264,5 @@ async def post_interact(body: InteractRequest):
         "user_id":  body.user_id,
         "word_id":  body.word_id,
         "rating":   body.rating,
-        "rated_words": int((_state["rating_matrix"][user_idx] > 0).sum()),
+        "rated_words": len(_state["custom_interactions"][user_id]),
     }

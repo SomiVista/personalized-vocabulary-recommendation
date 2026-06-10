@@ -205,9 +205,10 @@ def build_rating_matrix(users: list[dict], words: list[dict]) -> np.ndarray:
     level and the word's difficulty:
       - Words at/below user level  → skewed toward 3–5 (partial-to-full mastery)
       - Words 1 level above        → skewed toward 2–4 (learning zone)
-      - Words 2+ levels above      → skewed toward 1–2 (mostly unknown)
 
-    Cold-start users (IDs 101–105) are NOT included – they have no history.
+    To ensure realistic learning history, users only have rating history for
+    words at/below their CEFR level or up to one level above (Zone of Proximal Development).
+    This isolates the interaction logs per user type (e.g. A1 learners won't have C2 logs).
     """
     matrix = np.zeros((NUM_ACTIVE_USERS, NUM_WORDS), dtype=np.float32)
 
@@ -215,23 +216,24 @@ def build_rating_matrix(users: list[dict], words: list[dict]) -> np.ndarray:
 
     for u_idx, user in enumerate(users[:NUM_ACTIVE_USERS]):
         u_cefr_idx = CEFR_INDEX[user["cefr_level"]]
-        # Decide which words this user has interacted with (≈8% density)
-        interacted = np.random.rand(NUM_WORDS) < INTERACTION_DENSITY
+        
+        # Candidates: words at or below user's level, plus at most 1 level above (ZPD)
+        candidates = [w_idx for w_idx, cefr_idx in enumerate(word_cefr_indices) if cefr_idx <= u_cefr_idx + 1]
+        
+        # Select target density: around 24 words per user (~8% overall interaction density)
+        num_to_select = min(len(candidates), int(NUM_WORDS * INTERACTION_DENSITY))
+        
+        # Randomly choose candidate indices
+        selected_word_indices = np.random.choice(candidates, size=num_to_select, replace=False)
 
-        for w_idx in np.where(interacted)[0]:
+        for w_idx in selected_word_indices:
             diff = word_cefr_indices[w_idx] - u_cefr_idx
             if diff <= 0:
                 # At or below user level: likely mastered or near-mastered
                 rating = np.random.choice([3, 4, 5], p=[0.2, 0.4, 0.4])
-            elif diff == 1:
+            else:
                 # One level above: actively learning
                 rating = np.random.choice([2, 3, 4], p=[0.3, 0.4, 0.3])
-            elif diff == 2:
-                # Two levels above: challenging
-                rating = np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2])
-            else:
-                # Far above level: mostly unknown
-                rating = np.random.choice([1, 2], p=[0.7, 0.3])
             matrix[u_idx, w_idx] = rating
 
     return matrix

@@ -116,19 +116,34 @@
 
         <!-- Engines column -->
         <div class="arch-col arch-col--engines">
-          <div class="arch-node arch-node--cbf">
+          <div
+            class="arch-node arch-node--cbf"
+            :class="{ 'arch-node--active': activeMethod === 'content' }"
+            @click="selectMethod('content')"
+            title="Switch to Content-Based Filtering"
+          >
             <div class="arch-node-icon">📖</div>
             <div class="arch-node-label">Content-Based</div>
             <div class="arch-node-sub">Cosine Sim · CEFR+POS</div>
             <div class="arch-node-weight arch-node-weight--cbf">40%</div>
           </div>
-          <div class="arch-node arch-node--svd">
+          <div
+            class="arch-node arch-node--svd"
+            :class="{ 'arch-node--active': activeMethod === 'svd' }"
+            @click="selectMethod('svd')"
+            title="Switch to SVD Collaborative Filtering"
+          >
             <div class="arch-node-icon">🔢</div>
             <div class="arch-node-label">SVD · ColFilt</div>
             <div class="arch-node-sub">TruncatedSVD k=20</div>
             <div class="arch-node-weight arch-node-weight--svd">35%</div>
           </div>
-          <div class="arch-node arch-node--ae">
+          <div
+            class="arch-node arch-node--ae"
+            :class="{ 'arch-node--active': activeMethod === 'autoencoder' }"
+            @click="selectMethod('autoencoder')"
+            title="Switch to Autoencoder Collaborative Filtering"
+          >
             <div class="arch-node-icon">🧠</div>
             <div class="arch-node-label">Autoencoder</div>
             <div class="arch-node-sub">PyTorch 300→32→300</div>
@@ -154,7 +169,12 @@
 
         <!-- Hybrid engine -->
         <div class="arch-col arch-col--hybrid">
-          <div class="arch-node arch-node--hybrid">
+          <div
+            class="arch-node arch-node--hybrid"
+            :class="{ 'arch-node--active': activeMethod === 'hybrid' }"
+            @click="selectMethod('hybrid')"
+            title="Switch to Hybrid Engine"
+          >
             <div class="arch-node-icon">⚡</div>
             <div class="arch-node-label">Hybrid Engine</div>
             <div class="arch-node-sub">Weighted Ensemble</div>
@@ -218,7 +238,14 @@ const props = defineProps({
   allMetrics:      { type: Object, default: () => ({}) },
   recommendations: { type: Array,  default: () => [] },
   user:            { type: Object, default: () => ({}) },
+  activeMethod:    { type: String, default: 'hybrid' },
 })
+
+const emit = defineEmits(['select-method'])
+
+function selectMethod(method) {
+  emit('select-method', method)
+}
 
 // ── Chart refs ────────────────────────────────────────────────
 const barChartRef   = ref(null)
@@ -587,11 +614,35 @@ onUnmounted(() => {
   text-align:     center;
   width:          100%;
   position:       relative;
-  transition:     border-color 0.2s, box-shadow 0.2s;
+  transition:     all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor:         pointer;
+  user-select:    none;
 }
 .arch-node:hover {
   border-color: var(--clr-border-hov);
-  box-shadow:   0 4px 20px rgba(0,0,0,0.3);
+  box-shadow:   0 4px 20px rgba(255,255,255,0.04);
+  transform:    translateY(-2px);
+}
+.arch-node--active {
+  border-width: 1.5px;
+  transform:    scale(1.04) translateY(-2px) !important;
+  box-shadow:   0 0 20px var(--node-glow-color, rgba(99,102,241,0.25)) !important;
+}
+.arch-node--cbf.arch-node--active {
+  border-color: #6366f1 !important;
+  --node-glow-color: rgba(99,102,241,0.4);
+}
+.arch-node--svd.arch-node--active {
+  border-color: #8b5cf6 !important;
+  --node-glow-color: rgba(139,92,246,0.4);
+}
+.arch-node--ae.arch-node--active {
+  border-color: #06b6d4 !important;
+  --node-glow-color: rgba(6,182,212,0.4);
+}
+.arch-node--hybrid.arch-node--active {
+  border-color: #f59e0b !important;
+  --node-glow-color: rgba(245,158,11,0.4);
 }
 .arch-node-icon  { font-size: 18px; line-height: 1; }
 .arch-node-label { font-size: 11px; font-weight: 700; margin-top: 2px; }

@@ -50,16 +50,17 @@
             <th>Action</th>
           </tr>
         </thead>
-        <tbody>
+        <TransitionGroup tag="tbody" name="list">
           <WordInteractionRow
             v-for="(word, idx) in recommendations"
-            :key="`${word.word_id}-${refreshKey}`"
+            :key="word.word_id"
             :word="word"
             :rank="idx + 1"
             :user-id="userId"
             @interacted="onInteracted"
+            @word-click="$emit('word-click', $event)"
           />
-        </tbody>
+        </TransitionGroup>
       </table>
     </div>
 
@@ -86,7 +87,7 @@ const props = defineProps({
   isColdStart:     { type: Boolean, default: false },
   isLoading:       { type: Boolean, default: false },
 })
-const emit = defineEmits(['refresh', 'interacted'])
+const emit = defineEmits(['refresh', 'interacted', 'word-click'])
 
 const refreshKey = ref(0)
 
@@ -225,5 +226,22 @@ function onInteracted(payload) {
   0%   { opacity: 0.5; }
   50%  { opacity: 1; }
   100% { opacity: 0.5; }
+}
+
+/* ── Transitions ── */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s ease;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+.list-move {
+  transition: transform 0.4s ease;
 }
 </style>

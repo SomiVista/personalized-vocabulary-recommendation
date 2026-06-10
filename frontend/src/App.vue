@@ -54,7 +54,6 @@
           <UserSelector
             v-model="selectedUser"
             :users="users"
-            @update:modelValue="onUserChange"
           />
         </section>
 
@@ -102,14 +101,7 @@
           :is-loading="loadingRec"
           @refresh="fetchRecommendations"
           @interacted="onInteracted"
-        />
-
-        <!-- Charts Panel -->
-        <ChartsPanel
-          v-if="selectedUser"
-          :all-metrics="allMetrics"
-          :recommendations="recommendations"
-          :user="selectedUser"
+          @word-click="openWordDrawer"
         />
 
         <!-- Interaction log -->
@@ -135,8 +127,77 @@
           </div>
         </div>
 
+        <!-- Charts Panel -->
+        <ChartsPanel
+          v-if="selectedUser"
+          :all-metrics="allMetrics"
+          :recommendations="recommendations"
+          :user="selectedUser"
+          :active-method="selectedMethod"
+          @select-method="selectedMethod = $event"
+        />
+
       </section>
     </main>
+
+    <!-- Word Details Drawer (Slide-over) -->
+    <Transition name="slide">
+      <div v-if="selectedWordForDrawer" class="word-drawer glass">
+        <div class="drawer-header">
+          <h2>Word Details</h2>
+          <button class="btn-close" @click="closeWordDrawer">✕</button>
+        </div>
+        <div class="drawer-content" v-if="selectedWordForDrawer">
+          <div class="drawer-word-header">
+            <h1 class="drawer-word">{{ selectedWordForDrawer.word }}</h1>
+            <span class="cefr-badge" :class="`cefr--${selectedWordForDrawer.cefr_difficulty.toLowerCase()}`">
+              {{ selectedWordForDrawer.cefr_difficulty }}
+            </span>
+            <span class="pos-chip">{{ selectedWordForDrawer.part_of_speech }}</span>
+          </div>
+
+          <div class="drawer-section">
+            <h3>🔍 Etymology & Origin</h3>
+            <p>{{ getWordDetails(selectedWordForDrawer).origin }}</p>
+          </div>
+
+          <div class="drawer-section">
+            <h3>📖 Definition & Context</h3>
+            <p>{{ getWordDetails(selectedWordForDrawer).definition }}</p>
+          </div>
+
+          <div class="drawer-section">
+            <h3>📝 Example Sentence</h3>
+            <div class="example-box">
+              <p class="example-text">"{{ getWordDetails(selectedWordForDrawer).example }}"</p>
+              <span class="example-tag">Tailored for {{ selectedWordForDrawer.cefr_difficulty }}</span>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <h3>🔗 Synonyms & Antonyms</h3>
+            <div class="syn-ant-row">
+              <div>
+                <strong>Synonyms:</strong>
+                <div class="pills-list">
+                  <span class="pill" v-for="s in getWordDetails(selectedWordForDrawer).synonyms" :key="s">{{ s }}</span>
+                </div>
+              </div>
+              <div>
+                <strong>Antonyms:</strong>
+                <div class="pills-list">
+                  <span class="pill" v-for="a in getWordDetails(selectedWordForDrawer).antonyms" :key="a">{{ a }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary pronounce-drawer-btn" @click="pronounceWord(selectedWordForDrawer.word)">
+            🔊 Listen Pronunciation
+          </button>
+        </div>
+      </div>
+    </Transition>
 
     <!-- ══ Error toast ══ -->
     <Transition name="toast">
@@ -170,6 +231,129 @@ const backendStatus  = ref('offline')
 const errorMsg       = ref('')
 const interactionLog = ref([])
 
+const selectedWordForDrawer = ref(null)
+
+// ── Word Details Database & Helpers ────────────────────────
+const wordDetailsDb = {
+  "apple": {
+    origin: "Old English 'æppel', of Germanic origin.",
+    definition: "A round fruit with red, green, or yellow skin and crisp white flesh.",
+    example: "She took a bite of the sweet red apple.",
+    synonyms: ["fruit", "pome"],
+    antonyms: ["N/A"]
+  },
+  "run": {
+    origin: "Old English 'rinnan', of Germanic origin.",
+    definition: "Move at a speed faster than a walk, never having both feet on the ground at the same time.",
+    example: "We need to run to catch the school bus.",
+    synonyms: ["jog", "dash", "sprint"],
+    antonyms: ["walk", "crawl"]
+  },
+  "big": {
+    origin: "Middle English: of unknown origin.",
+    definition: "Of considerable size, extent, or intensity.",
+    example: "They live in a big house near the park.",
+    synonyms: ["large", "huge", "giant"],
+    antonyms: ["small", "tiny", "little"]
+  },
+  "paradox": {
+    origin: "Greek 'paradoxon' - contrary to opinion.",
+    definition: "A seemingly absurd or contradictory statement or proposition which when investigated may prove to be well founded or true.",
+    example: "It is a paradox that computers need so much paper.",
+    synonyms: ["contradiction", "anomaly", "puzzle"],
+    antonyms: ["certainty", "consistency"]
+  },
+  "alleviate": {
+    origin: "Late Latin 'alleviatus' - lightened.",
+    definition: "Make suffering, deficiency, or a problem less severe.",
+    example: "He took some medicine to alleviate his headache.",
+    synonyms: ["ease", "relieve", "mitigate"],
+    antonyms: ["aggravate", "worsen"]
+  },
+  "intricate": {
+    origin: "Late Latin 'intricatus' - entangled.",
+    definition: "Very detailed, complicated, or detailed.",
+    example: "The watch has an intricate mechanism with many small gears.",
+    synonyms: ["complex", "complicated", "elaborate"],
+    antonyms: ["simple", "straightforward"]
+  },
+  "epistemology": {
+    origin: "Greek 'episteme' (knowledge) + 'logos' (study).",
+    definition: "The theory of knowledge, especially with regard to its methods, validity, and scope.",
+    example: "Epistemology investigates the distinction between justified belief and opinion.",
+    synonyms: ["philosophy of knowledge", "gnoseology"],
+    antonyms: ["N/A"]
+  },
+  "obfuscate": {
+    origin: "Latin 'obfuscat-' - darkened.",
+    definition: "Make obscure, unclear, or unintelligible.",
+    example: "The politician tried to obfuscate the issue with complex statistics.",
+    synonyms: ["obscure", "confuse", "blur"],
+    antonyms: ["clarify", "explain", "simplify"]
+  },
+  "solipsism": {
+    origin: "Latin 'solus' (alone) + 'ipse' (self).",
+    definition: "The view or theory that the self is all that can be known to exist.",
+    example: "His solipsism made it difficult for him to empathize with the suffering of others.",
+    synonyms: ["egoism", "subjectivism"],
+    antonyms: ["altruism", "realism"]
+  }
+}
+
+function getWordDetails(wordObj) {
+  if (!wordObj) return { origin: '', definition: '', example: '', synonyms: [], antonyms: [] }
+  const w = wordObj.word.toLowerCase()
+  if (wordDetailsDb[w]) {
+    return wordDetailsDb[w]
+  }
+  
+  const pos = wordObj.part_of_speech
+  const cefr = wordObj.cefr_difficulty
+  
+  let definition = `A dynamic vocabulary term classified as a ${pos} in standard English.`
+  let origin = `Derived from historical root forms of Germanic and Latinate origin.`
+  let example = `This ${pos} is essential for learners at the ${cefr} level.`
+  let synonyms = ["term", "expression"]
+  let antonyms = ["N/A"]
+  
+  if (pos === "Noun") {
+    definition = `A noun denoting an object, concept, or phenomenon relevant to ${cefr} level discussions.`
+    example = `We discussed the importance of this '${wordObj.word}' during our class yesterday.`
+    synonyms = [wordObj.word + " concept", "entity", "idea"]
+  } else if (pos === "Verb") {
+    definition = `An action verb representing processes or states suitable for ${cefr} expression.`
+    example = `Please try to ${wordObj.word} this concept when you write your summary.`
+    synonyms = ["act", "perform", "execute"]
+  } else if (pos === "Adjective") {
+    definition = `A descriptive modifier to characterize subjects in ${cefr} environments.`
+    example = `The results were very ${wordObj.word}, confirming our hypothesis.`
+    synonyms = ["characteristic", "distinctive", "particular"]
+  } else if (pos === "Adverb") {
+    definition = `A modifier indicating manner, time, or degree.`
+    example = `She completed the task ${wordObj.word}, exceeding our expectations.`
+    synonyms = ["similarly", "directly", "adequately"]
+  }
+  
+  return { origin, definition, example, synonyms, antonyms }
+}
+
+function openWordDrawer(word) {
+  selectedWordForDrawer.value = word
+}
+
+function closeWordDrawer() {
+  selectedWordForDrawer.value = null
+}
+
+function pronounceWord(text) {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+  }
+}
+
 // ── Lifecycle ──────────────────────────────────────────────
 onMounted(async () => {
   await loadInitialData()
@@ -196,8 +380,6 @@ async function loadInitialData() {
     const firstActive = users.value.find(u => !u.is_cold_start)
     if (firstActive) {
       selectedUser.value = firstActive
-      await fetchRecommendations()
-      fetchAllMetrics(firstActive.user_id)  // populate comparison charts
     }
   } catch (err) {
     console.error('[init] Backend error:', err)
@@ -210,25 +392,36 @@ async function fetchRecommendations() {
   if (!selectedUser.value) return
   loadingRec.value = true
   errorMsg.value   = ''
+  const currentUserId = selectedUser.value.user_id
 
   try {
     const params = new URLSearchParams({
-      user_id: selectedUser.value.user_id,
+      user_id: currentUserId,
       method:  selectedMethod.value,
     })
     const res  = await fetch(`/api/recommend?${params}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
 
+    // Race condition check: make sure user didn't change while request was in flight
+    if (selectedUser.value?.user_id !== currentUserId) {
+      return
+    }
+
     recommendations.value = data.recommendations
     currentMetrics.value  = data.metrics
     ratedCount.value      = data.rated_words
+    interactionLog.value  = data.interaction_log || []
   } catch (err) {
-    console.error('[recommend] Error:', err)
-    showError(`Failed to fetch recommendations: ${err.message}`)
-    recommendations.value = []
+    if (selectedUser.value?.user_id === currentUserId) {
+      console.error('[recommend] Error:', err)
+      showError(`Failed to fetch recommendations: ${err.message}`)
+      recommendations.value = []
+    }
   } finally {
-    loadingRec.value = false
+    if (selectedUser.value?.user_id === currentUserId) {
+      loadingRec.value = false
+    }
   }
 }
 
@@ -243,6 +436,12 @@ async function fetchAllMetrics(userId) {
           .then(r => r.ok ? r.json() : null)
       )
     )
+    
+    // Race condition check: if user changed, discard these metrics
+    if (userId !== selectedUser.value?.user_id) {
+      return
+    }
+
     const newMetrics = {}
     methods.forEach((m, i) => {
       if (results[i]?.metrics) newMetrics[m] = results[i].metrics
@@ -253,7 +452,18 @@ async function fetchAllMetrics(userId) {
   }
 }
 
-// ── Watchers ───────────────────────────────────────────────
+// Watch selectedUser to load/sync recommendations, metrics, and logs dynamically per user
+watch(selectedUser, (newUser) => {
+  recommendations.value = []
+  interactionLog.value = []
+  if (newUser) {
+    fetchRecommendations()
+    fetchAllMetrics(newUser.user_id)
+  } else {
+    currentMetrics.value = null
+  }
+})
+
 // Watch selectedMethod so any algorithm tab click immediately fetches
 // new recommendations. Using watch() ensures selectedMethod.value is
 // already updated before fetchRecommendations() reads it.
@@ -265,12 +475,6 @@ watch(selectedMethod, () => {
 })
 
 // ── Event handlers ─────────────────────────────────────────
-function onUserChange(user) {
-  selectedUser.value = user
-  recommendations.value = []
-  fetchRecommendations()
-  fetchAllMetrics(user.user_id)   // refresh comparison chart for new user
-}
 
 
 function onInteracted({ word, rating }) {
@@ -575,6 +779,175 @@ function showError(msg) {
 
 .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(20px); }
+
+/* ── Word details drawer (slide-over) ── */
+.word-drawer {
+  position:       fixed;
+  top:            0;
+  right:          0;
+  width:          420px;
+  height:         100vh;
+  z-index:        1000;
+  padding:        30px 24px;
+  display:        flex;
+  flex-direction: column;
+  gap:            24px;
+  backdrop-filter: blur(20px);
+  border-left:    1px solid var(--clr-border);
+  box-shadow:     -10px 0 30px rgba(0, 0, 0, 0.4);
+}
+
+.drawer-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+}
+.drawer-header h2 {
+  font-size:   11px;
+  font-weight: 700;
+  color:       var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.btn-close {
+  background:  rgba(255,255,255,0.04);
+  border:      1px solid var(--clr-border);
+  color:       var(--clr-text);
+  border-radius: 50%;
+  width:       32px;
+  height:      32px;
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  cursor:      pointer;
+  font-size:   12px;
+  transition:  all 0.2s;
+}
+.btn-close:hover {
+  background:  rgba(255,255,255,0.1);
+  border-color: var(--clr-border-hov);
+}
+
+.drawer-content {
+  display:        flex;
+  flex-direction: column;
+  gap:            24px;
+  flex:           1;
+  overflow-y:     auto;
+  padding-right:  4px;
+}
+
+.drawer-word-header {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  flex-wrap:   wrap;
+}
+.drawer-word {
+  font-size:   36px;
+  font-weight: 800;
+  line-height: 1.1;
+  background:  linear-gradient(135deg, var(--clr-accent-from), var(--clr-accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  width:       100%;
+  margin-bottom: 4px;
+}
+.drawer-word-header .cefr-badge {
+  font-size: 11px;
+  padding:   3px 8px;
+}
+.drawer-word-header .pos-chip {
+  font-size:     11px;
+  font-weight:   500;
+  padding:       3px 8px;
+  border-radius: var(--radius-sm);
+  background:    rgba(99,102,241,0.1);
+  color:         var(--clr-accent-from);
+  border:        1px solid rgba(99,102,241,0.2);
+}
+
+.drawer-section {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+}
+.drawer-section h3 {
+  font-size:      11px;
+  font-weight:    700;
+  color:          var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.drawer-section p {
+  font-size:   14px;
+  line-height: 1.6;
+  color:       var(--clr-text);
+}
+
+.example-box {
+  background:    rgba(255, 255, 255, 0.02);
+  border:        1px solid var(--clr-border);
+  padding:       14px;
+  border-radius: var(--radius-md);
+  position:      relative;
+}
+.example-text {
+  font-style: italic;
+  font-size:  14px;
+  color:      var(--clr-text);
+  line-height: 1.5;
+}
+.example-tag {
+  display:    inline-block;
+  font-size:  9px;
+  color:      var(--clr-text-muted);
+  margin-top: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.syn-ant-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.pills-list {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       6px;
+  margin-top: 6px;
+}
+.pills-list .pill {
+  font-size:     11px;
+  padding:       3px 8px;
+  border-radius: var(--radius-sm);
+  background:    rgba(255,255,255,0.04);
+  border:        1px solid var(--clr-border);
+  color:         var(--clr-text);
+}
+
+.pronounce-drawer-btn {
+  margin-top: auto;
+  width:      100%;
+  padding:    12px;
+  font-size:  14px;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+}
+
+/* Drawer Transitions */
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
 
 /* ── Responsive ── */
 @media (max-width: 900px) {

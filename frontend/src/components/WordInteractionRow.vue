@@ -11,7 +11,14 @@
 
     <!-- Word -->
     <td class="td-word">
-      <span class="word-text">{{ word.word }}</span>
+      <div class="word-cell-content">
+        <span class="word-clickable-text" @click="$emit('word-click', word)" title="Click to view details">
+          {{ word.word }}
+        </span>
+        <button class="speak-btn" @click.stop="pronounceWord(word.word)" title="Listen pronunciation">
+          🔊
+        </button>
+      </div>
     </td>
 
     <!-- CEFR Difficulty -->
@@ -74,7 +81,16 @@ const props = defineProps({
   rank:   { type: Number,  default: 1 },
   userId: { type: Number,  required: true },
 })
-const emit = defineEmits(['interacted'])
+const emit = defineEmits(['interacted', 'word-click'])
+
+function pronounceWord(text) {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+  }
+}
 
 const isSubmitting = ref(false)
 const interacted   = ref(false)
@@ -146,10 +162,36 @@ td {
 
 /* Word */
 .td-word  { min-width: 130px; }
-.word-text {
+.word-cell-content {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+.word-clickable-text {
   font-size:   14px;
   font-weight: 600;
   color:       var(--clr-text);
+  cursor:      pointer;
+  transition:  color 0.2s;
+  border-bottom: 1px dashed transparent;
+}
+.word-clickable-text:hover {
+  color:         var(--clr-accent-from);
+  border-bottom-color: var(--clr-accent-from);
+}
+
+.speak-btn {
+  background:  none;
+  border:      none;
+  cursor:      pointer;
+  font-size:   13px;
+  opacity:     0.5;
+  transition:  opacity 0.2s, transform 0.2s;
+  padding:     2px;
+}
+.speak-btn:hover {
+  opacity:   1;
+  transform: scale(1.15);
 }
 
 /* CEFR badge */
