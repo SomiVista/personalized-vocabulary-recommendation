@@ -1,129 +1,157 @@
-# VocabAI Recommender — MRW2 Research Prototype
+# VocabAI Recommender
 
-**AN EXPERIMENTAL EVALUATION OF PERSONALIZED RECOMMENDER SYSTEMS FOR VOCABULARY LEARNING IN AI-DRIVEN LANGUAGE EDUCATION PLATFORMS**
+**An Experimental Evaluation of Personalized Recommender Systems for Vocabulary Learning in AI-Driven Language Education Platforms**
 
-> Vilnius Gediminas Technical University · Somayeh Roohani · Supervisor: Prof. Dr. Irina Vinogradova-Zinkevič
+> Master's Research · Vilnius Gediminas Technical University  
+> Somayeh Roohani · Supervisor: Prof. Dr. Irina Vinogradova-Zinkevič
 
 ---
 
-## Architecture
+## Overview
+
+A full-stack research prototype that compares four recommendation algorithms for personalized English vocabulary learning. Users are profiled by CEFR level (A1–C2), and the system recommends the five most appropriate words to study next based on their interaction history.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python · FastAPI · scikit-learn · PyTorch |
+| Frontend | Vue 3 (Composition API) · Vite · Vanilla CSS |
+| Communication | REST/JSON (`/api/*`) proxied by Vite dev server |
+
+---
+
+## Project Structure
 
 ```
 personalized-vocabulary-recommendation/
 ├── backend/
 │   ├── data_simulator.py   # Generates 105 users, 300 words, sparse rating matrix
 │   ├── recommenders.py     # 4 engines: CBF · SVD · Autoencoder · Hybrid
-│   ├── main.py             # FastAPI REST server (port 8000)
+│   ├── main.py             # FastAPI server — trains all models on startup
 │   └── requirements.txt
 └── frontend/
-    ├── index.html
     ├── vite.config.js
-    ├── package.json
     └── src/
-        ├── main.js
-        ├── style.css
-        ├── App.vue
+        ├── App.vue                     # Root layout, state, API calls, word drawer
+        ├── style.css                   # Global design tokens & utilities
         └── components/
-            ├── UserSelector.vue
-            ├── AlgorithmSelector.vue
-            ├── MetricsCard.vue
-            ├── RecommendationTable.vue
-            └── WordInteractionRow.vue
+            ├── UserSelector.vue        # Searchable learner profile picker
+            ├── AlgorithmSelector.vue   # CBF / SVD / Autoencoder / Hybrid tabs
+            ├── MetricsCard.vue         # RMSE, Precision@5, Coverage display
+            ├── ChartsPanel.vue         # Radar, bar, and score distribution charts
+            ├── RecommendationTable.vue # Top-5 table with session mastery counter
+            └── WordInteractionRow.vue  # Per-word row: flashcard, XAI tooltip,
+                                        # audio settings, confetti on mastery
 ```
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
+**Prerequisites:** Python 3.10+ and Node.js 18+
 
-### Terminal 1 – Backend
+### Terminal 1 — Backend
 
 ```bash
-# From the project root
 cd personalized-vocabulary-recommendation
 
-# Create and activate virtual environment (recommended)
 python3 -m venv .venv
-source .venv/bin/activate          # macOS/Linux
-# .venv\Scripts\activate           # Windows
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 
-# Install Python dependencies
 pip install -r backend/requirements.txt
 
-# Start FastAPI server (startup trains all models – takes ~15–30 seconds)
 uvicorn backend.main:app --reload --port 8000
 ```
 
-> ✅ Backend ready when you see: `[startup] Ready – 105 users, 300 words`
+> ✅ Ready when the console prints: `[startup] Ready – 105 users, 300 words`  
+> 📖 Interactive API docs: <http://localhost:8000/docs>
 
-### Terminal 2 – Frontend
+### Terminal 2 — Frontend
 
 ```bash
 cd personalized-vocabulary-recommendation/frontend
 
-# Install Node dependencies
 npm install
-
-# Start Vite dev server
 npm run dev
 ```
 
-> ✅ Open [http://localhost:5173](http://localhost:5173) in your browser.
+> ✅ Open <http://localhost:5173> in your browser.
 
 ---
 
 ## Dataset
 
-| Component | Details |
-|-----------|---------|
-| Active Users | 100, CEFR A1–C2 (weighted toward B1/B2) |
-| Cold-Start Users | 5 (IDs 101–105, zero interaction history) |
-| Vocabulary | 300 English words, 50 per CEFR level |
-| Interaction Matrix | 100 × 300 sparse, ~8% density, ratings 1–5 |
+| Property | Value |
+|---|---|
+| Active users | 100 (CEFR A1–C2, weighted toward B1/B2) |
+| Cold-start users | 5 (IDs 101–105, no interaction history) |
+| Vocabulary | 300 English words · 50 per CEFR level |
+| Rating matrix | 100 × 300 sparse · ~8% density · ratings 1–5 |
 
 ---
 
 ## Recommendation Engines
 
-| # | Method | Library | Cold-Start | Key Metric |
-|---|--------|---------|-----------|-----------|
-| 1 | Content-Based Filtering | scikit-learn | ✅ Native | CEFR cosine sim |
-| 2 | SVD Collaborative Filtering | scikit-learn TruncatedSVD | ⚠ CBF fallback | k=20 latent factors |
-| 3 | Deep Autoencoder | PyTorch CPU | ⚠ CBF fallback | 300→64→32→64→300 |
-| 4 | Hybrid (Proposed) | All above | ✅ Via CBF | 0.4 CBF + 0.35 SVD + 0.25 AE |
+| # | Method | Cold-Start | Weight / Config |
+|---|---|---|---|
+| 1 | **Content-Based Filtering (CBF)** | ✅ Native | TF-IDF cosine similarity on CEFR + POS features |
+| 2 | **SVD Collaborative Filtering** | ⚠ CBF fallback | 20 latent factors (TruncatedSVD) |
+| 3 | **Deep Autoencoder** | ⚠ CBF fallback | 300 → 64 → 32 → 64 → 300 (PyTorch CPU) |
+| 4 | **Hybrid (proposed)** | ✅ Via CBF | `0.40 × CBF + 0.35 × SVD + 0.25 × AE` (min-max normalized) |
 
 ---
 
-## API Endpoints
+## API Reference
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
-| `GET /api/users` | GET | All 105 users |
-| `GET /api/words` | GET | Full 300-word dictionary |
-| `GET /api/recommend?user_id=1&method=hybrid` | GET | Top-5 recommendations + metrics |
-| `POST /api/interact` | POST | `{user_id, word_id, rating}` |
-
-Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
----
-
-## Verification Commands
+|---|---|---|
+| `/api/users` | GET | All 105 user profiles |
+| `/api/words` | GET | Full 300-word dictionary |
+| `/api/recommend?user_id=1&method=hybrid` | GET | Top-5 recommendations + evaluation metrics |
+| `/api/interact` | POST | Record interaction `{ user_id, word_id, rating }` |
 
 ```bash
-# Check users list
-curl http://localhost:8000/api/users | python3 -m json.tool | head -30
-
-# Active user recommendations (hybrid)
+# Hybrid recommendations for user 1
 curl "http://localhost:8000/api/recommend?user_id=1&method=hybrid" | python3 -m json.tool
 
 # Cold-start user (auto-falls back to CBF)
 curl "http://localhost:8000/api/recommend?user_id=101&method=svd" | python3 -m json.tool
 
-# Record an interaction
+# Record a mastered rating
 curl -X POST http://localhost:8000/api/interact \
   -H "Content-Type: application/json" \
   -d '{"user_id": 1, "word_id": 5, "rating": 5}'
 ```
+
+---
+
+## Dashboard Features
+
+| Feature | Description |
+|---|---|
+| **XAI Score Tooltip** | Hover the Engine Score bar to see the Hybrid model's 40/35/25% weight breakdown |
+| **3D Flashcard Flip** | Click a word to flip and reveal its synonym for active recall practice |
+| **Word Details Drawer** | Click ℹ to open a side panel with etymology, definition, example, derivative forms |
+| **Audio Settings** | Choose 🇺🇸 US / 🇬🇧 UK accent and 1.0× / 0.75× playback speed per word |
+| **Confetti + Counter** | Clicking ✓ Mastered fires a particle burst and increments the session counter |
+| **Algorithm Comparison** | Charts panel shows RMSE, Precision@5, and Coverage across all four methods |
+| **Interaction Log** | Real-time per-user log of all rated words in the current session |
+
+---
+
+## Evaluation Metrics
+
+| Metric | Formula |
+|---|---|
+| **RMSE** | `√( Σ(predicted − actual)² / n )` — lower is better |
+| **Precision@5** | Fraction of top-5 recommendations rated ≥ 4 by the user |
+| **Coverage** | Fraction of the 300-word catalog the model can recommend |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
