@@ -99,8 +99,10 @@
           :method="selectedMethod"
           :is-cold-start="selectedUser?.is_cold_start"
           :is-loading="loadingRec"
+          :session-mastery-count="sessionMasteryCount"
           @refresh="fetchRecommendations"
           @interacted="onInteracted"
+          @mastered="onMastered"
           @word-click="openWordDrawer"
         />
 
@@ -157,12 +159,22 @@
       </section>
     </main>
 
+    <!-- Word Details Drawer — Backdrop (Feature 3) -->
+    <Transition name="fade-backdrop">
+      <div
+        v-if="selectedWordForDrawer"
+        class="drawer-backdrop"
+        @click="closeWordDrawer"
+        aria-hidden="true"
+      ></div>
+    </Transition>
+
     <!-- Word Details Drawer (Slide-over) -->
     <Transition name="slide">
-      <div v-if="selectedWordForDrawer" class="word-drawer glass">
+      <div v-if="selectedWordForDrawer" class="word-drawer glass" role="dialog" aria-modal="true" aria-label="Word details panel">
         <div class="drawer-header">
           <h2>Word Details</h2>
-          <button class="btn-close" @click="closeWordDrawer">✕</button>
+          <button class="btn-close" @click="closeWordDrawer" title="Close panel">✕</button>
         </div>
         <div class="drawer-content" v-if="selectedWordForDrawer">
           <div class="drawer-word-header">
@@ -173,13 +185,25 @@
             <span class="pos-chip">{{ selectedWordForDrawer.part_of_speech }}</span>
           </div>
 
+          <!-- Score bar in drawer -->
+          <div class="drawer-score-row" v-if="selectedWordForDrawer.score != null">
+            <span class="drawer-score-label">Engine Score</span>
+            <div class="drawer-score-bar-track">
+              <div
+                class="drawer-score-bar-fill"
+                :style="{ width: drawerScoreWidth }"
+              ></div>
+            </div>
+            <span class="drawer-score-val mono">{{ selectedWordForDrawer.score?.toFixed(3) }}</span>
+          </div>
+
           <div class="drawer-section">
-            <h3>🔍 Etymology & Origin</h3>
+            <h3>🔍 Etymology &amp; Origin</h3>
             <p>{{ getWordDetails(selectedWordForDrawer).origin }}</p>
           </div>
 
           <div class="drawer-section">
-            <h3>📖 Definition & Context</h3>
+            <h3>📖 Definition &amp; Context</h3>
             <p>{{ getWordDetails(selectedWordForDrawer).definition }}</p>
           </div>
 
@@ -191,8 +215,23 @@
             </div>
           </div>
 
+          <!-- Derivative Forms (Feature 3 enhancement) -->
           <div class="drawer-section">
-            <h3>🔗 Synonyms & Antonyms</h3>
+            <h3>🔠 Derivative Forms</h3>
+            <div class="derivative-grid">
+              <div
+                v-for="form in getDerivativeForms(selectedWordForDrawer)"
+                :key="form.label"
+                class="derivative-card"
+              >
+                <span class="derivative-tag">{{ form.label }}</span>
+                <span class="derivative-word">{{ form.value }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <h3>🔗 Synonyms &amp; Antonyms</h3>
             <div class="syn-ant-row">
               <div>
                 <strong>Synonyms:</strong>
@@ -209,9 +248,22 @@
             </div>
           </div>
 
-          <button class="btn btn-primary pronounce-drawer-btn" @click="pronounceWord(selectedWordForDrawer.word)">
-            🔊 Listen Pronunciation
-          </button>
+          <!-- Audio controls in drawer -->
+          <div class="drawer-audio-row">
+            <button class="btn btn-primary pronounce-drawer-btn" @click="pronounceWord(selectedWordForDrawer.word, drawerAudioLang, drawerAudioRate)">
+              🔊 Listen Pronunciation
+            </button>
+            <div class="drawer-audio-opts">
+              <select class="drawer-audio-select" v-model="drawerAudioLang">
+                <option value="en-US">🇺🇸 US English</option>
+                <option value="en-GB">🇬🇧 UK English</option>
+              </select>
+              <select class="drawer-audio-select" v-model="drawerAudioRate">
+                <option :value="1.0">Normal 1.0×</option>
+                <option :value="0.75">Slow 0.75×</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
@@ -227,7 +279,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import UserSelector        from './components/UserSelector.vue'
 import AlgorithmSelector   from './components/AlgorithmSelector.vue'
 import MetricsCard         from './components/MetricsCard.vue'
@@ -249,6 +301,16 @@ const errorMsg       = ref('')
 const interactionLog = ref([])
 
 const selectedWordForDrawer = ref(null)
+const sessionMasteryCount   = ref(0)
+const drawerAudioLang       = ref('en-US')
+const drawerAudioRate       = ref(1.0)
+
+// Computed score bar width for drawer
+const drawerScoreWidth = computed(() => {
+  const s = selectedWordForDrawer.value?.score ?? 0
+  const n = s <= 1 ? s : (s - 1) / 4
+  return Math.max(4, Math.min(100, n * 100)) + '%'
+})
 
 // ── Word Details Database & Helpers ────────────────────────
 const wordDetailsDb = {
@@ -362,11 +424,42 @@ function closeWordDrawer() {
   selectedWordForDrawer.value = null
 }
 
-function pronounceWord(text) {
+/** Derivative forms generator (Feature 3) */
+function getDerivativeForms(wordObj) {
+  if (!wordObj) return []
+  const w   = wordObj.word
+  const pos = wordObj.part_of_speech
+  const forms = []
+  if (pos === 'Noun') {
+    forms.push({ label: 'Verb',      value: w.endsWith('tion') ? w.replace('tion','te') : w + 'ize' })
+    forms.push({ label: 'Adjective', value: w + 'al' })
+    forms.push({ label: 'Adverb',    value: w + 'ally' })
+  } else if (pos === 'Verb') {
+    forms.push({ label: 'Noun',      value: w + 'tion' })
+    forms.push({ label: 'Adjective', value: w + 'ive' })
+    forms.push({ label: 'Past',      value: w.endsWith('e') ? w + 'd' : w + 'ed' })
+  } else if (pos === 'Adjective') {
+    forms.push({ label: 'Noun',      value: w + 'ness' })
+    forms.push({ label: 'Adverb',    value: w + 'ly' })
+    forms.push({ label: 'Comparative', value: 'more ' + w })
+  } else if (pos === 'Adverb') {
+    forms.push({ label: 'Adjective', value: w.endsWith('ly') ? w.slice(0,-2) : w })
+    forms.push({ label: 'Noun',      value: w.endsWith('ly') ? w.slice(0,-2) + 'ness' : w + 'ness' })
+  } else {
+    forms.push({ label: 'Base', value: w })
+  }
+  return forms
+}
+
+function pronounceWord(text, lang = 'en-US', rate = 1.0) {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'en-US'
+    utterance.lang = lang
+    utterance.rate = rate
+    const voices = window.speechSynthesis.getVoices()
+    const match  = voices.find(v => v.lang.startsWith(lang.slice(0,5)))
+    if (match) utterance.voice = match
     window.speechSynthesis.speak(utterance)
   }
 }
@@ -495,7 +588,6 @@ watch(selectedMethod, () => {
 
 // ── Event handlers ─────────────────────────────────────────
 
-
 function onInteracted({ word, rating }) {
   const now = new Date()
   interactionLog.value.push({
@@ -504,6 +596,10 @@ function onInteracted({ word, rating }) {
     time: now.toLocaleTimeString(),
   })
   // fetchRecommendations is called by RecommendationTable after delay
+}
+
+function onMastered() {
+  sessionMasteryCount.value++
 }
 
 function showError(msg) {
@@ -990,6 +1086,122 @@ function showError(msg) {
 .slide-leave-to {
   transform: translateX(100%);
   opacity: 0;
+}
+
+/* ── Drawer backdrop (Feature 3) ── */
+.drawer-backdrop {
+  position:   fixed;
+  inset:      0;
+  z-index:    999;
+  background: rgba(5, 8, 20, 0.55);
+  backdrop-filter: blur(6px);
+}
+.fade-backdrop-enter-active,
+.fade-backdrop-leave-active { transition: opacity 0.3s ease; }
+.fade-backdrop-enter-from,
+.fade-backdrop-leave-to     { opacity: 0; }
+
+/* ── Drawer score bar ── */
+.drawer-score-row {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  padding:     10px 14px;
+  background:  rgba(99,102,241,0.06);
+  border:      1px solid rgba(99,102,241,0.15);
+  border-radius: var(--radius-md);
+}
+.drawer-score-label {
+  font-size:   10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color:       var(--clr-accent-from);
+  flex-shrink: 0;
+}
+.drawer-score-bar-track {
+  flex:          1;
+  height:        5px;
+  background:    var(--clr-surface-hov);
+  border-radius: 999px;
+  overflow:      hidden;
+}
+.drawer-score-bar-fill {
+  height:        100%;
+  border-radius: 999px;
+  background:    linear-gradient(90deg, var(--clr-accent-from), var(--clr-accent-to));
+  transition:    width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.drawer-score-val {
+  font-size:   11px;
+  color:       var(--clr-text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Derivative forms (Feature 3) ── */
+.derivative-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap:                   8px;
+}
+.derivative-card {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+  padding:        8px 10px;
+  border-radius:  var(--radius-md);
+  background:     rgba(255,255,255,0.03);
+  border:         1px solid var(--clr-border);
+}
+.derivative-tag {
+  font-size:      9px;
+  font-weight:    700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color:          var(--clr-accent-from);
+}
+.derivative-word {
+  font-size:   13px;
+  font-weight: 500;
+  color:       var(--clr-text);
+  font-style:  italic;
+}
+
+/* ── Drawer audio controls (Feature 4) ── */
+.drawer-audio-row {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  margin-top:     auto;
+  padding-top:    8px;
+  border-top:     1px solid var(--clr-border);
+}
+.pronounce-drawer-btn {
+  width:         100%;
+  padding:       12px;
+  font-size:     14px;
+  font-weight:   700;
+  border-radius: var(--radius-md);
+}
+.drawer-audio-opts {
+  display: flex;
+  gap:     8px;
+}
+.drawer-audio-select {
+  flex:          1;
+  padding:       6px 8px;
+  font-size:     12px;
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  color:         var(--clr-text);
+  cursor:        pointer;
+  transition:    border-color 0.15s;
+}
+.drawer-audio-select:hover,
+.drawer-audio-select:focus {
+  border-color: var(--clr-accent-from);
+  outline:      none;
 }
 
 /* ── Responsive ── */

@@ -6,6 +6,16 @@
         Top-5 Recommendations
         <span v-if="methodLabel" class="method-pill">{{ methodLabel }}</span>
       </div>
+
+      <!-- Session mastery counter (Feature 5) -->
+      <Transition name="mastery-count">
+        <div v-if="sessionMasteryCount > 0" class="mastery-chip" aria-live="polite">
+          <span class="mastery-trophy">🏆</span>
+          <span class="mastery-num">{{ sessionMasteryCount }}</span>
+          <span class="mastery-label">mastered this session</span>
+        </div>
+      </Transition>
+
       <button
         class="btn btn-primary refresh-btn"
         id="btn-refresh-recommendations"
@@ -46,7 +56,7 @@
             <th>Word / Phrase</th>
             <th>CEFR</th>
             <th>Part of Speech</th>
-            <th>Score</th>
+            <th title="Hover score for AI weight breakdown">Score ✦</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -58,6 +68,7 @@
             :rank="idx + 1"
             :user-id="userId"
             @interacted="onInteracted"
+            @mastered="onMastered"
             @word-click="$emit('word-click', $event)"
           />
         </TransitionGroup>
@@ -81,13 +92,14 @@ import { ref, computed, watch } from 'vue'
 import WordInteractionRow from './WordInteractionRow.vue'
 
 const props = defineProps({
-  recommendations: { type: Array,   default: () => [] },
-  userId:          { type: Number,  default: null },
-  method:          { type: String,  default: 'hybrid' },
-  isColdStart:     { type: Boolean, default: false },
-  isLoading:       { type: Boolean, default: false },
+  recommendations:     { type: Array,   default: () => [] },
+  userId:              { type: Number,  default: null },
+  method:              { type: String,  default: 'hybrid' },
+  isColdStart:         { type: Boolean, default: false },
+  isLoading:           { type: Boolean, default: false },
+  sessionMasteryCount: { type: Number,  default: 0 },
 })
-const emit = defineEmits(['refresh', 'interacted', 'word-click'])
+const emit = defineEmits(['refresh', 'interacted', 'word-click', 'mastered'])
 
 const refreshKey = ref(0)
 
@@ -98,37 +110,37 @@ const methodLabels = {
   hybrid:      '⚡ Hybrid',
 }
 
-// ✅ Must be computed so it updates when the method prop changes
 const methodLabel = computed(() => methodLabels[props.method] || props.method)
 
-// ✅ Re-mount rows whenever the algorithm changes so stale interaction
-// states (greyed-out rows) from the previous algorithm are cleared
-watch(() => props.method, () => {
-  refreshKey.value++
-})
+// Re-mount rows whenever algorithm changes to clear stale interaction states
+watch(() => props.method, () => { refreshKey.value++ })
 
 function onInteracted(payload) {
   emit('interacted', payload)
-  // After a brief delay, trigger a refresh so new recommendations replace the rated word
+  // After brief delay trigger refresh so new recommendations replace rated word
   setTimeout(() => {
     refreshKey.value++
     emit('refresh')
   }, 800)
 }
+
+function onMastered(payload) {
+  emit('mastered', payload)
+}
 </script>
 
 <style scoped>
-.rec-table-wrapper { overflow: hidden; }
+.rec-table-wrapper { overflow: visible; }   /* allow XAI tooltip to escape */
 
 /* Header */
 .table-header {
-  display:       flex;
-  align-items:   center;
+  display:         flex;
+  align-items:     center;
   justify-content: space-between;
-  padding:       18px 20px 14px;
-  border-bottom: 1px solid var(--clr-border);
-  flex-wrap:     wrap;
-  gap:           10px;
+  padding:         18px 20px 14px;
+  border-bottom:   1px solid var(--clr-border);
+  flex-wrap:       wrap;
+  gap:             10px;
 }
 .table-title {
   display:     flex;
@@ -137,7 +149,7 @@ function onInteracted(payload) {
   font-size:   14px;
   font-weight: 600;
 }
-.table-icon { font-size: 16px; }
+.table-icon  { font-size: 16px; }
 .method-pill {
   font-size:     11px;
   font-weight:   600;
@@ -149,29 +161,63 @@ function onInteracted(payload) {
 }
 .refresh-btn { font-size: 12px; padding: 7px 14px; }
 
+/* ── Mastery counter chip (Feature 5) ── */
+.mastery-chip {
+  display:       flex;
+  align-items:   center;
+  gap:           6px;
+  padding:       5px 12px;
+  border-radius: 999px;
+  background:    linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.12));
+  border:        1px solid rgba(16,185,129,0.35);
+  box-shadow:    0 0 14px rgba(16,185,129,0.12);
+  animation:     masteryPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.mastery-trophy { font-size: 14px; }
+.mastery-num {
+  font-size:   14px;
+  font-weight: 800;
+  color:       #34d399;
+}
+.mastery-label {
+  font-size:   11px;
+  font-weight: 600;
+  color:       #6ee7b7;
+  white-space: nowrap;
+}
+
+@keyframes masteryPop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* Mastery counter Transition */
+.mastery-count-enter-active { transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.mastery-count-leave-active { transition: all 0.25s ease; }
+.mastery-count-enter-from   { opacity: 0; transform: scale(0.7) translateY(-4px); }
+.mastery-count-leave-to     { opacity: 0; transform: scale(0.85); }
+
 /* Empty state */
 .empty-state {
-  display:        flex;
-  flex-direction: column;
-  align-items:    center;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
   justify-content: center;
-  padding:        60px 20px;
-  gap:            8px;
-  text-align:     center;
+  padding:         60px 20px;
+  gap:             8px;
+  text-align:      center;
 }
 .empty-icon { font-size: 40px; opacity: 0.4; }
 .empty-text { font-size: 15px; font-weight: 600; color: var(--clr-text-muted); }
 .empty-hint { font-size: 12px; color: var(--clr-text-faint); }
 
 /* Table */
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; overflow-y: visible; }
 .rec-table {
   width:           100%;
   border-collapse: collapse;
 }
-.rec-table thead tr {
-  background: rgba(255,255,255,0.02);
-}
+.rec-table thead tr { background: rgba(255,255,255,0.02); }
 .rec-table th {
   padding:        10px 10px;
   font-size:      10px;
@@ -186,41 +232,41 @@ function onInteracted(payload) {
 
 /* Cold-start notice */
 .cold-notice {
-  display:     flex;
-  align-items: flex-start;
-  gap:         12px;
-  padding:     14px 18px;
-  margin:      0 16px 16px;
+  display:       flex;
+  align-items:   flex-start;
+  gap:           12px;
+  padding:       14px 18px;
+  margin:        0 16px 16px;
   border-radius: var(--radius-md);
-  background:  rgba(6,182,212,0.06);
-  border:      1px solid rgba(6,182,212,0.2);
-  font-size:   12px;
-  color:       var(--clr-accent2);
-  line-height: 1.6;
+  background:    rgba(6,182,212,0.06);
+  border:        1px solid rgba(6,182,212,0.2);
+  font-size:     12px;
+  color:         var(--clr-accent2);
+  line-height:   1.6;
 }
 .cold-notice > span { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
 
 /* Skeleton */
 .skeleton-table { padding: 8px 0; }
 .skeleton-row-outer {
-  display:     flex;
-  align-items: center;
-  gap:         12px;
-  padding:     12px 20px;
+  display:       flex;
+  align-items:   center;
+  gap:           12px;
+  padding:       12px 20px;
   border-bottom: 1px solid var(--clr-border);
-  animation:   shimmer 1.2s infinite;
+  animation:     shimmer 1.2s infinite;
 }
 .skel {
-  background: var(--clr-surface-hov);
+  background:    var(--clr-surface-hov);
   border-radius: 4px;
-  height: 16px;
+  height:        16px;
 }
-.skel-rank { width: 28px; height: 28px; border-radius: 50%; }
-.skel-word { flex: 2; }
-.skel-cefr { width: 44px; }
-.skel-pos  { width: 70px; }
-.skel-bar  { flex: 1; }
-.skel-btns { width: 160px; }
+.skel-rank  { width: 28px; height: 28px; border-radius: 50%; }
+.skel-word  { flex: 2; }
+.skel-cefr  { width: 44px; }
+.skel-pos   { width: 70px; }
+.skel-bar   { flex: 1; }
+.skel-btns  { width: 160px; }
 
 @keyframes shimmer {
   0%   { opacity: 0.5; }
@@ -228,17 +274,17 @@ function onInteracted(payload) {
   100% { opacity: 0.5; }
 }
 
-/* ── Transitions ── */
+/* ── List TransitionGroup ── */
 .list-enter-active,
 .list-leave-active {
   transition: all 0.4s ease;
 }
 .list-enter-from {
-  opacity: 0;
+  opacity:   0;
   transform: translateY(12px);
 }
 .list-leave-to {
-  opacity: 0;
+  opacity:   0;
   transform: translateX(-30px);
 }
 .list-move {
